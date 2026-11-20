@@ -1,0 +1,7 @@
+# @muutot/dsh-session-color bundle patch（dsh.bundle manifest 要求的加载配置）
+# 单包单插件：宿主半侧提供 RPC + 颜色持久化，dsh.client 声明让 Web 应用加载 ./client。
+# id 保持裸名 dsh-session-color：它是入口 id / 设置命名空间 / RPC 路由前缀，改了会丢历史数据；
+# 只有 name（node_modules 里解析的包名）带 @muutot scope（同 @dmh2002/dsh-connect-qoder 先例）。
+- insert:
+    - id: dsh-session-color
+      name: '@muutot/dsh-session-color'
