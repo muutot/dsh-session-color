@@ -1,4 +1,5 @@
-// 前端半侧冒烟测试：mock 环境验证两条菜单路径 / CSS / RPC 信封 / 深浅主题。
+// 前端半侧冒烟测试：mock 环境验证官方菜单 / CSS / RPC 信封 / 深浅主题。
+// 硬规则：只走官方 contextMenus，不测也不允许任何自绘浮层退路。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
@@ -7,99 +8,22 @@ import vm from 'node:vm';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const source = readFileSync(join(root, 'client', 'client.js'), 'utf8');
 
-/** 造一个最小 DOM，够自绘菜单跑起来；记录 document 上的监听器供手动派发。 */
-function makeDom() {
-  const byId = new Map();
-  const documentListeners = new Map();
-
-  class El {
-    constructor(tag) {
-      this.tagName = tag;
-      this.children = [];
-      this.style = {};
-      this.attrs = {};
-      this.className = '';
-      this.textContent = '';
-      this.parentNode = null;
-      this.listeners = {};
-    }
-    set id(value) { this.attrs.id = value; byId.set(value, this); }
-    get id() { return this.attrs.id; }
-    setAttribute(name, value) {
-      this.attrs[name] = value;
-      if (name === 'id') byId.set(value, this);
-    }
-    getAttribute(name) { return this.attrs[name] ?? null; }
-    hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name); }
-    appendChild(child) {
-      child.parentNode = this;
-      this.children.push(child);
-      if (child.attrs && child.attrs.id) byId.set(child.attrs.id, child);
-      return child;
-    }
-    removeChild(child) {
-      this.children = this.children.filter((item) => item !== child);
-      child.parentNode = null;
-      if (child.attrs && child.attrs.id) byId.delete(child.attrs.id);
-      return child;
-    }
-    addEventListener(type, handler) {
-      if (!this.listeners[type]) this.listeners[type] = [];
-      this.listeners[type].push(handler);
-    }
-    removeEventListener(type, handler) {
-      if (!this.listeners[type]) return;
-      this.listeners[type] = this.listeners[type].filter((item) => item !== handler);
-    }
-    dispatch(type, event = {}) {
-      for (const handler of this.listeners[type] || []) handler(event);
-    }
-    contains(target) {
-      return target === this || this.children.includes(target);
-    }
-    getBoundingClientRect() {
-      return { left: 0, top: 0, right: 148, bottom: 300, width: 148, height: 300 };
-    }
-    closest(selector) {
-      return selector === '[data-row-key]' && this.attrs['data-row-key'] ? this : null;
-    }
-  }
-
-  const head = new El('head');
-  const body = new El('body');
-  const documentElement = new El('html');
-  documentElement.getAttribute = () => '';
-
-  const document = {
-    documentElement,
-    head,
-    body,
-    createElement: (tag) => new El(tag),
-    getElementById: (id) => byId.get(id) ?? null,
-    addEventListener: (type, handler) => { documentListeners.set(type, handler); },
-    removeEventListener: (type) => { documentListeners.delete(type); },
-  };
-
-  const windowListeners = new Map();
-  const window = {
-    __ModuleLoader__: { load: (registration) => { window.registration = registration; } },
-    innerWidth: 1280,
-    innerHeight: 800,
-    addEventListener: (type, handler) => { windowListeners.set(type, handler); },
-    removeEventListener: (type) => { windowListeners.delete(type); },
-  };
-
-  return { El, document, window, byId, documentListeners, windowListeners };
-}
-
 /** 在给定 sandbox 里执行插件源码并返回导出的模块。 */
 function loadModule(sandbox, getRegistration) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
   const registration = getRegistration ? getRegistration() : sandbox.window.registration;
-  if (!registration || registration.id !== 'dsh-session-color') throw new Error('module did not register');
-  const mod = registration.factory(() => ({}));
+  if (!registration || registration.id !== '@muutot/dsh-session-color') throw new Error('module did not register');
+  // 源码现在 require('react') + require('react/jsx-runtime') 注册官方 icon 组件，
+  // 给最小 stub 让 factory 能执行（测试不真的渲染组件）。
+  const jsxStub = (tag, props) => ({ tag, props });
+  const stubRequire = (id) => {
+    if (id === 'react') return { createElement: jsxStub, useState: () => [undefined, () => {}] };
+    if (id === 'react/jsx-runtime') return { jsx: jsxStub, jsxs: jsxStub, Fragment: Symbol('Fragment') };
+    return {};
+  };
+  const mod = registration.factory(stubRequire);
   if (typeof mod.apply !== 'function') throw new Error('apply not exported');
   if (mod.name !== 'dsh-session-color') throw new Error('name mismatch');
   return mod;
@@ -133,7 +57,11 @@ function loadModule(sandbox, getRegistration) {
         },
       },
     },
-    get: (name) => (name === 'contextMenus' ? menus : undefined),
+    contextMenus: menus,
+    slots: {
+      inject: (name, factory) => { const d = factory(); return typeof d === 'function' ? d : () => {}; },
+      register: (info, component) => () => {},
+    },
     effect: (fn, label) => {
       const cleanup = fn();
       effects.push({ label, cleanup });
@@ -147,10 +75,20 @@ function loadModule(sandbox, getRegistration) {
   const fakeDocument = {
     documentElement: { getAttribute: (k) => documentElementAttrs[k] ?? '', className: '', appendChild() {} },
     head: { appendChild() {} },
-    body: { hasAttribute: (k) => Object.prototype.hasOwnProperty.call(bodyAttrs, k), className: '' },
+    body: { hasAttribute: (k) => Object.prototype.hasOwnProperty.call(bodyAttrs, k), className: '', appendChild() {}, removeChild() {} },
     getElementById: () => styleEl,
-    createElement: () => styleEl,
+    createElement: () => fakeInput(),
+    addEventListener: () => {},
+    removeEventListener: () => {},
   };
+  function fakeInput() {
+    return {
+      type: '', value: '', style: {}, attrs: {},
+      setAttribute(k, v) { this.attrs[k] = v; },
+      addEventListener() {}, removeEventListener() {}, click() {},
+      parentNode: null,
+    };
+  }
 
   const sandbox = {
     window: {
@@ -165,14 +103,39 @@ function loadModule(sandbox, getRegistration) {
 
   const mod = loadModule(sandbox, () => registration);
 
+  // 官方菜单 + slots 是硬依赖；inject 必须声明，且不得有任何自绘退路。
+  if (JSON.stringify(mod.inject) !== JSON.stringify(['connection', 'contextMenus', 'slots'])) {
+    throw new Error('inject must be ["connection","contextMenus","slots"], got ' + JSON.stringify(mod.inject));
+  }
+  if (/installDomMenu|dsc-menu|MENU_CSS|dsc-item/.test(source)) {
+    throw new Error('self-drawn menu code must not exist in client.js');
+  }
+
   mod.apply(fakeCtx);
   await Promise.resolve();
   await Promise.resolve();
 
   if (!registration || typeof registration.resolve !== 'function') throw new Error('context menu not registered');
   const actions = registration.resolve({ sessionId: 'abc123' });
-  if (actions.length !== 1 || actions[0].children.length !== 10) {
+  if (actions.length !== 1 || actions[0].children.length !== 11) {
     throw new Error('menu shape wrong: ' + JSON.stringify(actions));
+  }
+  // 9 预设 + 1 自定义，都带官方 icon:{key,src}（SVG data URI 色块）；清除项无 icon。
+  for (let i = 0; i < 10; i++) {
+    const icon = actions[0].children[i].icon;
+    if (!icon || typeof icon.key !== 'string' || !icon.key.startsWith('dsh-session-color.swatch.')) {
+      throw new Error('color action missing official icon key: ' + i);
+    }
+    if (!icon.src || !icon.src.startsWith('data:image/svg+xml')) {
+      throw new Error('color action missing swatch src: ' + i);
+    }
+  }
+  const customItem = actions[0].children[9];
+  if (customItem.id !== 'custom' || !customItem.label.includes('自定义颜色')) {
+    throw new Error('custom color action missing: ' + JSON.stringify(customItem));
+  }
+  if (actions[0].children[10].id !== 'clear' || actions[0].children[10].icon !== undefined) {
+    throw new Error('clear action should be last with no icon');
   }
   if (rpcCalls.length === 0 || rpcCalls[0].endpoint !== 'colors.list') throw new Error('list RPC not called');
   if (!styleEl.textContent.includes('session:abc123')) throw new Error('CSS not generated');
@@ -214,83 +177,168 @@ function loadModule(sandbox, getRegistration) {
   await Promise.resolve(); await Promise.resolve();
   if (!styleEl.textContent.includes('#d9f2dd')) throw new Error('did not switch back to light green');
 
+  // 自定义色：深浅两主题都用用户选的同一个 hex（所见即所得）。
+  fakeCtx.connection.rpc.call = async (channel, endpoint, payload) => {
+    rpcCalls.push({ channel, endpoint, payload });
+    return { ok: true, value: { colors: { abc123: 'custom:#1a2b3c' } } };
+  };
+  actions[0].children[0].run();
+  await Promise.resolve(); await Promise.resolve();
+  if (!styleEl.textContent.includes('background-color:#1a2b3c')) throw new Error('custom color CSS missing');
+  bodyAttrs['data-ds-dark-theme'] = '';
+  actions[0].children[0].run();
+  await Promise.resolve(); await Promise.resolve();
+  if (!styleEl.textContent.includes('background-color:#1a2b3c')) throw new Error('custom color changed with theme');
+  delete bodyAttrs['data-ds-dark-theme'];
+
   console.log('SMOKE OK (official contextMenus path)');
   console.log('  css:', styleEl.textContent.replace(/\n/g, ' '));
   console.log('  effects:', effects.map((e) => e.label).join(', '));
 }
 
-//#region 路径 B：0.2.1-rc.5 无 contextMenus → 自绘菜单
+//#region 自绘取色面板：点「确定」才落盘，取消/Esc/非法值不落盘（Muu 2026-11-22）
 {
-  const { El, document, window, byId, documentListeners } = makeDom();
+  let registration = null;
   const rpcCalls = [];
+  const effects = [];
+  const rpcValue = { colors: {} };
+  const menus = { register: (input) => { registration = input; return () => {}; } };
 
-  const sandbox = {
-    window,
-    document,
-    MutationObserver: class { observe() {} disconnect() {} },
-    Request: class {},
-    URL, Object, JSON, console,
-  };
-
-  const mod = loadModule(sandbox);
-  // 关键前提：inject 里绝不能再写 contextMenus，否则整条 row 永远 pending。
-  if (JSON.stringify(mod.inject) !== JSON.stringify(['connection'])) {
-    throw new Error('inject must be ["connection"], got ' + JSON.stringify(mod.inject));
+  // 能记录子元素与事件处理器的最小 DOM。
+  function el(tag) {
+    const node = {
+      tag, children: [], style: {}, attrs: {}, value: '', textContent: '',
+      parentNode: null, listeners: {},
+      get id() { return this.attrs.id; },
+      set id(v) { this.attrs.id = v; },
+      setAttribute(k, v) { this.attrs[k] = v; },
+      appendChild(c) { c.parentNode = this; this.children.push(c); return c; },
+      removeChild(c) { this.children = this.children.filter((x) => x !== c); c.parentNode = null; return c; },
+      addEventListener(t, h) { (this.listeners[t] ||= []).push(h); },
+      removeEventListener(t, h) { this.listeners[t] = (this.listeners[t] || []).filter((x) => x !== h); },
+      dispatch(t, e = {}) { for (const h of [...(this.listeners[t] || [])]) h(e); },
+      contains(x) { return x === this || this.children.some((c) => c.contains && c.contains(x)); },
+      focus() {}, select() {},
+    };
+    return node;
   }
 
-  const ctx = {
-    connection: {
-      rpc: {
-        call: async (channel, endpoint, payload) => {
-          rpcCalls.push({ channel, endpoint, payload });
-          if (endpoint === 'colors.list') return { ok: true, value: { colors: { s1: 'green' } } };
-          return { ok: true, value: { colors: { ...(payload.key === null ? {} : { [payload.sessionId]: payload.key }) } } };
-        },
-      },
+  const body = el('body');
+  const docListeners = {};
+  const byId = new Map();
+  const fakeDocument = {
+    documentElement: { getAttribute: () => '', className: '' },
+    head: { appendChild(c) { if (c.id) byId.set(c.id, c); } },
+    body: {
+      hasAttribute: () => false, className: '',
+      appendChild(c) { body.appendChild(c); }, removeChild(c) { body.removeChild(c); },
     },
-    // 0.2.1 没有该服务：ctx.get 返回 undefined
-    get: () => undefined,
-    effect: (fn) => { const cleanup = fn(); return () => { if (typeof cleanup === 'function') cleanup(); }; },
+    getElementById: (id) => byId.get(id) || null,
+    createElement: (tag) => el(tag),
+    addEventListener: (t, h) => { (docListeners[t] ||= []).push(h); },
+    removeEventListener: (t, h) => { docListeners[t] = (docListeners[t] || []).filter((x) => x !== h); },
   };
+  const sandbox = {
+    window: {
+      __ModuleLoader__: { load: (r) => { registration = r; } },
+      innerWidth: 1280, innerHeight: 800,
+    },
+    document: fakeDocument,
+    MutationObserver: class { observe() {} disconnect() {} },
+    setTimeout: (fn) => { /* 面板测试不跑延时监听挂载 */ return 0; },
+    clearTimeout: () => {},
+    Request: class {}, URL, Object, JSON, console,
+  };
+  const jsxStub = (tag, props) => ({ tag, props });
+  const stubRequire = (id) => {
+    if (id === 'react') return { createElement: jsxStub, useState: () => [undefined, () => {}] };
+    if (id === 'react/jsx-runtime') return { jsx: jsxStub, jsxs: jsxStub, Fragment: Symbol('F') };
+    return {};
+  };
+  const mod = registration ? null : null;
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox);
+  const m = registration.factory(stubRequire);
+  const fakeCtx = {
+    connection: { rpc: { call: async (ch, ep, payload) => {
+      rpcCalls.push({ ep, payload });
+      if (ep === 'colors.list') return { ok: true, value: rpcValue };
+      if (ep === 'colors.set') {
+        if (payload.key === null) delete rpcValue.colors[payload.sessionId];
+        else rpcValue.colors[payload.sessionId] = payload.key;
+        return { ok: true, value: rpcValue };
+      }
+    } } },
+    contextMenus: menus,
+    slots: { inject: (n, f) => { const d = f(); return () => {}; }, register: () => () => {} },
+    effect: (fn) => { const c = fn(); effects.push(c); return () => { if (typeof c === 'function') c(); }; },
+  };
+  m.apply(fakeCtx);
+  const actions = registration.resolve({ sessionId: 's1' });
+  const custom = actions[0].children[9];
 
-  mod.apply(ctx);
-  await Promise.resolve();
-  await Promise.resolve();
+  // 先模拟右键会话行：面板应锚定这个右键坐标，而不是菜单项坐标。
+  for (const h of docListeners.contextmenu || []) h({ clientX: 321, clientY: 456 });
 
-  const row = new El('div');
-  row.setAttribute('data-row-key', 'session:s1');
-  const onContextMenu = documentListeners.get('contextmenu');
-  if (typeof onContextMenu !== 'function') throw new Error('fallback did not listen for contextmenu');
-
-  let prevented = false;
-  onContextMenu({
-    target: row,
-    clientX: 140,
-    clientY: 410,
-    preventDefault: () => { prevented = true; },
-    stopPropagation: () => {},
-  });
-
-  if (!prevented) throw new Error('fallback did not preventDefault on session row');
-  const menu = byId.get('dsh-session-color-menu');
-  if (!menu) throw new Error('fallback menu element missing');
-  const items = menu.children.filter((child) => child.className.includes('dsc-item'));
-  if (items.length !== 10) throw new Error('fallback menu item count wrong: ' + items.length);
-  if (menu.className.includes('dsc-light') === false) throw new Error('fallback menu theme class missing');
-
-  // 点「蓝」（第 6 项）→ set RPC + 颜色生效
-  const blue = items[5];
-  if (blue.children[1].textContent !== '蓝') throw new Error('palette order changed: ' + blue.children[1].textContent);
-  blue.dispatch('click', {
-    stopPropagation: () => {},
-    preventDefault: () => {},
-  });
-  await Promise.resolve();
-  await Promise.resolve();
-  if (!rpcCalls.some((c) => c.endpoint === 'colors.set' && c.payload.key === 'blue')) {
-    throw new Error('fallback set RPC not called');
+  // 打开面板：应创建一个浮层，且此时不落盘。
+  const before = rpcCalls.length;
+  custom.run();
+  const panel = body.children.find((c) => c.attrs.id === 'dsh-session-color-picker');
+  if (!panel) throw new Error('picker panel not created');
+  if (rpcCalls.length !== before) throw new Error('opening picker must not write color');
+  if (panel.style.left !== '321px' || panel.style.top !== '456px') {
+    throw new Error('picker must anchor at right-click position, got ' + panel.style.left + ',' + panel.style.top);
   }
-  if (byId.get('dsh-session-color-menu')) throw new Error('menu not closed after pick');
 
-  console.log('SMOKE OK (fallback DOM menu path)');
+  // 面板内要有原生取色器控件（type=color），点它可打开系统色盘。
+  const row = panel.children[1];
+  const colorInput = row.children[0];
+  const hexInput = row.children[1];
+  if (colorInput.type !== 'color') throw new Error('picker panel must contain a native color input');
+  // 系统色盘选色 → 同步到 hex 框 + 实时预览到会话行（不落盘）。
+  colorInput.value = '#0a0b0c';
+  colorInput.dispatch('change');
+  if (hexInput.value !== '#0a0b0c') throw new Error('color picker change must sync hex input');
+  const previewStyle = byId.get('dsh-session-color-preview');
+  if (!previewStyle || !previewStyle.textContent.includes('background-color:#0a0b0c')) {
+    throw new Error('color picker change must preview on session row');
+  }
+  if (rpcCalls.some((c) => c.ep === 'colors.set')) throw new Error('preview must not persist');
+
+  const btns = panel.children[2];
+  const [cancelBtn, okBtn] = btns.children;
+
+  // 非法值点确定 → 不落盘、面板还在。
+  hexInput.value = 'nope';
+  okBtn.dispatch('click');
+  if (rpcCalls.some((c) => c.ep === 'colors.set')) throw new Error('invalid hex must not commit');
+  if (!body.children.includes(panel)) throw new Error('invalid hex should keep panel open');
+
+  // 合法值点确定 → 落盘 custom:#abcdef，面板关闭。
+  hexInput.value = '#abcdef';
+  hexInput.dispatch('input');
+  okBtn.dispatch('click');
+  const set = rpcCalls.find((c) => c.ep === 'colors.set');
+  if (!set || set.payload.key !== 'custom:#abcdef') throw new Error('confirm must commit custom color');
+  if (body.children.includes(panel)) throw new Error('panel should close after confirm');
+
+  // 取消路径：重新打开，输入合法值但点取消 → 不新增落盘。
+  const beforeCancel = rpcCalls.filter((c) => c.ep === 'colors.set').length;
+  custom.run();
+  const panel2 = body.children.find((c) => c.attrs.id === 'dsh-session-color-picker');
+  const hex2 = panel2.children[1].children[1];
+  const cancel2 = panel2.children[2].children[0];
+  hex2.value = '#123456';
+  hex2.dispatch('input');
+  cancel2.dispatch('click');
+  if (rpcCalls.filter((c) => c.ep === 'colors.set').length !== beforeCancel) {
+    throw new Error('cancel must not commit');
+  }
+  // 取消后实时预览必须清掉，会话行恢复原色。
+  if (byId.get('dsh-session-color-preview').textContent !== '') {
+    throw new Error('cancel must clear live preview');
+  }
+
+  console.log('SMOKE OK (custom picker: preview live, confirm commits, cancel/invalid do not)');
 }
+

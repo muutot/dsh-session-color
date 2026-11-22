@@ -9,6 +9,17 @@ export const ENDPOINTS = Object.freeze({
   set: 'colors.set',
 });
 
+/** 自定义色值的 key 前缀：存储形如 custom:#aabbcc。 */
+export const CUSTOM_KEY_PREFIX = 'custom:';
+
+/** 合法的自定义色 key：custom: + 6 位十六进制。 */
+export const CUSTOM_KEY_RE = /^custom:#[0-9a-fA-F]{6}$/;
+
+/** key 是否为合法色值（预设 key 或自定义色）。 */
+export function isValidColorKey(key, validKeys) {
+  return validKeys.has(key) || CUSTOM_KEY_RE.test(key);
+}
+
 /** 预设色板。key 用于持久化与菜单项 id，label 为中文显示名。 */
 export const PALETTE = Object.freeze([
   { key: 'red', label: '红', color: '#fde2e2', dark: '#5c2b2b' },

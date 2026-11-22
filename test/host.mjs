@@ -72,6 +72,14 @@ r = await rpc('colors.set', { sessionId: '../evil', key: 'red' });
 if (!valueOf(r).__error) throw new Error('invalid sessionId not rejected');
 r = await rpc('colors.set', { sessionId: 'session-abc', key: 'not-a-color' });
 if (!valueOf(r).__error) throw new Error('invalid key not rejected');
+
+// 自定义色：合法 custom:#rrggbb 接受，畸形 custom 值拒绝。
+r = await rpc('colors.set', { sessionId: 'session-custom', key: 'custom:#1a2b3c' });
+if (valueOf(r).colors?.['session-custom'] !== 'custom:#1a2b3c') throw new Error('custom color not accepted');
+r = await rpc('colors.set', { sessionId: 'session-custom', key: 'custom:#xyzxyz' });
+if (!valueOf(r).__error) throw new Error('malformed custom color not rejected');
+r = await rpc('colors.set', { sessionId: 'session-custom', key: 'custom:#12345' });
+if (!valueOf(r).__error) throw new Error('short custom color not rejected');
 r = await rpc('colors.set', { sessionId: 'session-abc', key: null });
 if (valueOf(r).colors['session-abc'] !== undefined) throw new Error('clear failed');
 

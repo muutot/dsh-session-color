@@ -1,6 +1,6 @@
 {
   "name": "@muutot/dsh-session-color",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "给 DSH 左侧会话列表里的单条对话换背景色：右键会话 → 选颜色，跨会话/跨设备持久保存。兼容 0.2.1-rc.5（自绘菜单）与 0.2.2+（官方 contextMenus）。",
   "type": "module",
   "main": "lib/index.js",
@@ -24,7 +24,7 @@
     "url": "git+https://github.com/muutot/dsh-session-color.git"
   },
   "engines": {
-    "dsh": ">=0.2.1-rc.5 <0.3.0-0"
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
   },
   "dsh": {
     "bundle": {
@@ -32,7 +32,9 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection"
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-context-menu",
+        "@deepseek-ai/dsh-client-ui-slots"
       ],
       "platform": "web"
     }

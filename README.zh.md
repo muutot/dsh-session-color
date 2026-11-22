@@ -5,6 +5,7 @@
 ## 用法
 
 在会话行上点右键 → **会话背景色** → 选一个预设色（或「清除颜色」）。
+每个颜色项前有一个小色块（走 DSH 官方 `contextMenu.icon` 扩展点渲染，非自绘）。
 选中即生效，颜色写入主机的配置文件，重启 DSH、换浏览器访问都还在。
 
 ## 颜色存哪
@@ -17,25 +18,27 @@
 
 纯展示状态，不进模型上下文，不写会话日志。想全部清掉，删这个文件即可。
 
-## 兼容性（0.2.0 起）
+## 兼容性（仅官方菜单）
 
-同一份代码跑两个版本的 DSH：
+**只支持 DSH ≥ 0.2.2-rc.1**（提供 `contextMenus` 服务的版本）。
+菜单一律走官方 `ctx.contextMenus.register({ target: 'session' })`，
+**不提供任何自绘浮层/覆盖层退路**——这是硬性 UI 规则：
+UI 扩展只用宿主官方扩展点，不自己画浮层模拟宿主菜单。
 
-| DSH 版本 | 菜单实现 |
-|---|---|
-| ≥ 0.2.2-rc.1 | 官方 `ctx.contextMenus.register({ target: 'session' })` |
-| ≤ 0.2.1-rc.5 | 自带浮层：监听会话行 `contextmenu`，自绘色板 |
+- 前端 `inject = ['connection', 'contextMenus', 'slots']`，三者是硬依赖，
+  由 Cordis 保证服务就绪后才激活本行；不做存在性探测、不留退路。
+- `package.json` 的 `dsh.client.inject` 同时列
+  `@deepseek-ai/dsh-client-connection`、`@deepseek-ai/dsh-client-ui-context-menu`、
+  `@deepseek-ai/dsh-client-ui-slots`，保证浏览器模块加载顺序（依赖包先于本插件）。
+- 色块：颜色动作带 `icon: { key, src }`（src 是纯色 SVG 的 data URI，深浅各一份），
+  并 `ctx.slots.inject('contextMenu.icon', ...)` 注册一个把 src 渲染成 14×14 `<img>` 的
+  组件——与 open-in-app 应用图标同一官方机制，不是自绘浮层。
+  `require('react')` / `require('react/jsx-runtime')` 是 baseline 模块，无需 manifest 声明。
 
-判据是**运行时** `ctx.get('contextMenus')` 是否存在（`cordis/lib/index.js:763`
-读服务不需要 inject），不是版本号字符串。
-
-> **坑（0.1.x → 0.2.1 升级时踩过）**：`inject` 里绝对不能出现 `contextMenus`。
-> 0.2.1 没有这个服务，写进去整条 client row 会永远
-> `pending (waiting for service: contextMenus)`，Web 启动审计判为致命错误
-> （`crash-*-web-boot.log`：`web boot: 1 entry did not activate`），
-> 桌面端随后走「禁用全部插件」恢复，把所有插件和 `cordis.patch.yml` 一起清掉。
-> 同理，`package.json` 的 `dsh.client.inject` 里也不能列
-> `@deepseek-ai/dsh-client-ui-context-menu`（0.2.1 里根本没有这个包）。
+> **历史坑（0.2.x 兼容年代踩过，现已不适用）**：早期为兼容没有该服务的 0.2.1，
+> 曾用 `ctx.get('contextMenus')` 运行时探测 + 自绘浮层退路；在 rc.5 上该探测
+> 误判成「无服务」，结果右键直接弹自绘色板而不是官方菜单里的二级选项。
+> 现已按硬规则砍掉全部自绘代码，只走官方菜单，故不再兼容 0.2.1。
 
 ## 实现要点
 
@@ -52,10 +55,10 @@
 - 会话行 DOM 自带 `data-row-key="session:<id>"`（0.2.1-rc.5：
   `dsh-client-ui-workspace/lib/client.js:2276`）。
   CSS 用属性选择器命中，不依赖会随构建变化的 CSS Modules 哈希类名。
-- 会话右键菜单：有 `contextMenus` 服务时用
+- 会话右键菜单：一律用
   `ctx.contextMenus.register({ target: 'session', ... })`
   （`dsh-client-ui-context-menu/README.zh.md:32-38`），菜单项支持 `children` 子菜单；
-  没有时退化为自绘浮层。
+  无自绘退路。
 - 浏览器端 RPC `ctx.connection.rpc.call(channel, endpoint, payload)`
   （`dsh-client-connection/lib/client.browser.js:1212`）。
 
@@ -79,7 +82,7 @@
 ## 开发
 
 ```bash
-node test/smoke.mjs              # 前端：官方菜单 + 自绘菜单两条路径 / CSS / RPC 信封 / 深浅主题
+node test/smoke.mjs              # 前端：官方菜单 / CSS / RPC 信封 / 深浅主题（并断言无自绘代码）
 node test/host.mjs               # 宿主：读写落盘 / 输入校验 / 信封 / 404
 node --check lib/index.js && node --check client/client.js
 ```
