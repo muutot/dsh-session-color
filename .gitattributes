@@ -1,0 +1,4 @@
+# 二进制与行尾：仓库一律 LF，杜绝 CRLF 混入 npm 包（评审指出 cordis.patch.yml 曾 CRLF）。
+* text=auto eol=lf
+*.png binary
+*.ico binary

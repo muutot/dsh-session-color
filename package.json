@@ -1,7 +1,7 @@
 {
   "name": "@muutot/dsh-session-color",
-  "version": "0.3.0",
-  "description": "给 DSH 左侧会话列表里的单条对话换背景色：右键会话 → 选颜色，跨会话/跨设备持久保存。兼容 0.2.1-rc.5（自绘菜单）与 0.2.2+（官方 contextMenus）。",
+  "version": "0.3.1",
+  "description": "给 DSH 左侧会话列表里的单条对话换背景色：右键会话 → 选预设色或自定义颜色（原生取色器+实时预览），跨会话/跨设备持久保存。需 DSH ≥ 0.2.2-rc.1（官方 contextMenus）；0.2.1-rc.5 请装 0.2.1。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -15,7 +15,8 @@
     "shared",
     "cordis.patch.yml",
     "README.md",
-    "README.zh.md"
+    "README.zh.md",
+    "LICENSE"
   ],
   "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "session", "color", "theme"],
   "license": "MIT",

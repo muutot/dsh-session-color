@@ -4,26 +4,28 @@
 
 ## 用法
 
-在会话行上点右键 → **会话背景色** → 选一个预设色（或「清除颜色」）。
+在会话行上点右键 → **会话背景色** → 选一个预设色、「自定义颜色…」（原生取色器 +
+hex 输入，改色时行背景实时预览），或「清除颜色」。
 每个颜色项前有一个小色块（走 DSH 官方 `contextMenu.icon` 扩展点渲染，非自绘）。
-选中即生效，颜色写入主机的配置文件，重启 DSH、换浏览器访问都还在。
+点「确定」才落盘，颜色写入主机的配置文件，重启 DSH、换浏览器访问都还在。
 
 ## 颜色存哪
 
 `$DSH_HOME/dsh-session-color/colors.json`（默认 `~/.dsh/dsh-session-color/colors.json`）：
 
 ```json
-{ "01J...": "green", "01K...": "red" }
+{ "01J...": "green", "01K...": "red", "02X...": "custom:#76b46e" }
 ```
 
 纯展示状态，不进模型上下文，不写会话日志。想全部清掉，删这个文件即可。
 
-## 兼容性（仅官方菜单）
+## 兼容性
 
-**只支持 DSH ≥ 0.2.2-rc.1**（提供 `contextMenus` 服务的版本）。
-菜单一律走官方 `ctx.contextMenus.register({ target: 'session' })`，
-**不提供任何自绘浮层/覆盖层退路**——这是硬性 UI 规则：
-UI 扩展只用宿主官方扩展点，不自己画浮层模拟宿主菜单。
+**只支持 DSH ≥ 0.2.2-rc.1**（`engines.dsh: >=0.2.2-rc.1 <0.3.0-0`，即提供
+`contextMenus` 服务的版本）。菜单一律走官方
+`ctx.contextMenus.register({ target: 'session' })`，无自绘退路。
+**DSH 0.2.1-rc.5 的用户请改装旧版 `@muutot/dsh-session-color@0.2.1`**（该版本
+`engines.dsh: >=0.2.1-rc.5`，带自绘菜单退路）。
 
 - 前端 `inject = ['connection', 'contextMenus', 'slots']`，三者是硬依赖，
   由 Cordis 保证服务就绪后才激活本行；不做存在性探测、不留退路。
@@ -92,3 +94,7 @@ node --check lib/index.js && node --check client/client.js
 前端是纯 CJS、无 JSX，不需要构建步骤；改完 `client/client.js` 后刷新页面
 （或由 HMR 重建）即可生效。宿主改完用 `plugin_manager set_plugin` 对该插件
 disable → enable 重载 fiber，不用重启应用。
+
+## 许可
+
+[MIT](LICENSE)
